@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:context="http://www.springframework.org/schema/context" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:apachekafka="http://www.mulesoft.org/schema/mule/apachekafka" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/apachekafka http://www.mulesoft.org/schema/mule/apachekafka/current/mule-apachekafka.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+	<context:property-placeholder location="mule-app.properties"/>
+	<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <apachekafka:config name="Apache_Kafka__Configuration" bootstrapServers="${config.bootstrapServers}" consumerPropertiesFile="${config.consumerPropertiesFile}" producerPropertiesFile="${config.producerPropertiesFile}" doc:name="Apache Kafka: Configuration"/>
+    <flow name="ui-provider-flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="Root Endpoint"/>
+        <http:static-resource-handler resourceBase="src/main/resources/html" defaultFile="form.html" doc:name="Push message web form provider"/>
+    </flow>	
+    <flow name="consumer-flow">
+        <apachekafka:consumer topic="${consumer.topic}" partitions="${consumer.topic.partitions}" doc:name="Kafka consumer" config-ref="Apache_Kafka__Configuration"/>
+        <logger message="New message arrived: #[payload]" level="INFO" doc:name="Consumed message logger"/>
+    </flow>
+    <flow name="producer-flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/pushMessage"  doc:name="Push message endpoint"/>
+        <dw:transform-message doc:name="Push request transformer">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	"message": payload.message,
+	"topic": payload.topic
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="Message: &quot;#[payload.message]&quot; is going to be published to topic: &quot;#[payload.topic]&quot;." level="INFO" doc:name="Data to be produced logger"/>
+        <apachekafka:producer key="#[server.dateTime.getMilliSeconds()]" message="#[payload.message]" topic="#[payload.topic]" doc:name="Kafka publisher" config-ref="Apache_Kafka__Configuration"/>
+        <set-payload value="Message successfully sent to Kafka topic." doc:name="Push response builder"/>
+    </flow>
+</mule>
